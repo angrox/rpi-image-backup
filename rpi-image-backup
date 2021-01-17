@@ -1,0 +1,195 @@
+#!/bin/bash
+#
+# rpi-image-backup: Backups the SDcard of an raspberry pi using
+# partclone, sfdisk and dd for mbr backup
+
+DATEDIR=$(date +%F)
+PROGRAM=$(basename "$0")
+
+usage() {
+    cat <<EOT
+    Usage: $PROGRAM [--backup | --restore] -d <device> -n <name> -b <basedir>
+        One of the following commands are required:
+      * -d|--device <device>   : Storage device to backup
+      * -n|--name <name        : Name of the raspberry to use as backup dir
+      * -b|--basedir <dir>     : Output directory. Structure <name>/<date> will
+                                 be created automatically during backup.  
+                                 For restore options the basedir is the directory
+                                 the backup files are present 
+      * --backup               : Perform a backup
+      * --restore              : Perform a restore. Note: All data on the device will 
+                                 be overwritten, so be careful!
+      Backup and Restore are mutually exclusive!
+        And any combination of the following OPTIONS are optional:
+        -h|--help            : Print this help message.
+    * Required
+
+    Examples:
+
+    Backup a raspi image from /dev/sdi to /backup:
+    # $PROGRAM --backup -d /dev/sdi -n mypi -b /backup
+    This creates the backup files in /backup/mypi/<yyyy>-<mm>-<dd>/
+
+    Restore the backup on a sdcard (which could also be /dev/sdi)
+    # $PROGRAM --restore -d /dev/sdi -n mypi -b /backup/mypi/<yyyy>-<mm>-<dd>
+
+EOT
+    exit 3
+}
+
+backup() {
+  mkdir -p "${DIR}"
+
+  # sfdisk dump
+  echo "Dumping partition information"
+  if ! sfdisk -d "${DEVICE}" > "${DIR}/sfdisk.dump"; then
+    echo "Error dumping partition information" 
+    exit 1
+  fi
+
+  # mbr
+  echo "Dumping MBR"
+  if ! dd "if=${DEVICE}" bs=512 count=1 "of=${DIR}/mbr.dump"; then
+    echo "Error dumping MBR"
+    exit 1
+  fi
+
+
+  # iterate over partitions
+  echo "Backup partitions"
+  for PARTITION in $(sfdisk -d "${DEVICE}" | grep '^/dev' | cut -d: -f1)
+  do
+    FSTYPE=$(blkid "${PARTITION}" -o export | grep '^TYPE' | cut -d= -f2)
+    PARTNUMBER=$(echo "$PARTITION" | tr -dc '[:digit:]')
+    if [ -z "${FSTYPE}" ]; then
+      continue
+    fi
+    if ! fsck -y "${PARTITION}"; then
+      echo "File system check on partition ${PARTITION} failed"
+      exit 1
+    fi
+    if ! "partclone.${FSTYPE}" -c -s "${PARTITION}" -O "${DIR}/${PINAME}.${PARTNUMBER}.${FSTYPE}.img"; then
+      echo "Cloning of partition ${PARTITION} to image file ${DIR}/${PINAME}.${PARTNUMBER}.${FSTYPE}.img failed"
+      exit 1
+    fi
+  done
+}
+
+restore() {
+  # check directory
+  if [ ! -d "${DIR}" ]; then
+    echo "Directory $DIR not found"
+    exit 1
+  fi
+  # check partition file
+  test ! -f "${DIR}/sfdisk.dump" && \
+    echo "File sfdisk.dump with partition information not found" && \
+    exit 1
+
+  PARTITIONS=$(grep '^/dev' "${DIR}/sfdisk.dump" | cut -d: -f1)
+
+  # check mbr file
+  test ! -f "${DIR}/mbr.dump" && \
+    echo "File mbr.dump with master boot record not found" && \
+    exit 1
+
+  # check partition dumps
+  #for PARTITION in ${PARTITIONS}
+  #do
+  #  PARTNUMBER=$(echo "$PARTITION" | tr -dc '[:digit:]')
+  #  if ! compgen -G "${DIR}/${PINAME}.${PARTNUMBER}.*.img" >/dev/null 2>&1; then
+  #    echo "partition file for $PARTITION not found"
+  #    exit 1
+  #  fi
+  #done
+
+  # Re-create partition
+  echo "Creating partitons on ${DEVICE}"
+  if ! sfdisk "${DEVICE}" < "${DIR}/sfdisk.dump"; then
+    echo "Error writing partition information" 
+    exit 1
+  fi
+
+  # Re-read partition
+  echo "Reread partition information"
+  if ! partprobe "${DEVICE}"; then
+    echo "Could not re-read the partition information on device ${DEVICE}"
+    exit 1
+  fi
+
+  # Re-create MBR
+  echo "Restoring MBR"
+  if ! dd "if=${DIR}/mbr.dump" bs=512 count=1 "of=${DEVICE}"; then
+    echo "Error dumping MBR"
+    exit 1
+  fi
+
+  # Iterate over partitions
+  echo "Restore partitions"
+  for PARTITION in ${PARTITIONS}
+  do
+    PARTNUMBER=$(echo "$PARTITION" | tr -dc '[:digit:]')
+    FSTYPE=$(basename $(compgen -G "${DIR}/${PINAME}.${PARTNUMBER}.*.img") | cut -d. -f3)
+    if [ -z "${FSTYPE}" ]; then
+      echo "Skipping $PARTITION: Cloud not find filesystem type"
+      continue
+    fi
+    if ! partclone.restore -d -s "${DIR}/${PINAME}.${PARTNUMBER}.${FSTYPE}.img" -o "${PARTITION}"; then
+      echo "Restoring of partition $PARTITION failed!"
+      exit 1
+    fi
+  done
+}
+
+
+# --- MAIN ---
+
+if ! OPTIONS=$(getopt -n "$0" -o d:n:b:h --long device:,name:,basedir:,help,backup,restore -- "$@"); then
+  usage
+fi
+# [[ "$?" -ne 0 ]] && usage
+
+eval set -- "$OPTIONS"
+
+while true ; do
+    case $1 in
+        -d|--device    ) DEVICE=$2; shift;;
+        -n|--name      ) PINAME=$2; shift;;
+        -b|--basedir   ) BASEDIR=$2; shift;;
+        --backup       ) ACTION='backup';;
+        --restore      ) ACTION='restore';;
+        -h|--help      ) usage;;
+        --      ) shift; break;;
+        *       ) usage;;
+    esac
+    shift
+done
+
+if [ -z "$ACTION" ] || [ -z "$DEVICE" ] || [ -z "$PINAME" ] || [ -z "$BASEDIR" ]; then
+  usage
+fi
+
+
+echo "$DEVICE"
+echo "$PINAME"
+echo "$BASEDIR"
+
+if [ ! -d "$BASEDIR" ]; then
+  echo "Outputdir $BASEDIR does not exist!"
+  exit 1
+fi
+
+if ! blkid "${DEVICE}" >/dev/null 2>&1; then
+  echo no device
+  exit 1
+fi
+
+if [ "${ACTION}" == 'backup' ]; then
+  DIR="${BASEDIR}/${PINAME}/${DATEDIR}"
+else
+  DIR="${BASEDIR}"
+fi
+
+eval "${ACTION}"
+
+
