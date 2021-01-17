@@ -37,6 +37,7 @@ EOT
     exit 3
 }
 
+# check the requirements
 requirements() {
   local requirement_missing=0
   for req in blkid sfdisk partclone.restore dd
@@ -49,6 +50,7 @@ requirements() {
   [ "${requirement_missing}" -ne 0 ] && exit 1
 }
 
+# action: backup
 backup() {
   mkdir -p "${DIR}"
 
@@ -87,6 +89,7 @@ backup() {
   done
 }
 
+# action: restore
 restore() {
   # check directory
   if [ ! -d "${DIR}" ]; then
@@ -174,18 +177,13 @@ if [ -z "$ACTION" ] || [ -z "$DEVICE" ] || [ -z "$PINAME" ] || [ -z "$BASEDIR" ]
   usage
 fi
 
-
-echo "$DEVICE"
-echo "$PINAME"
-echo "$BASEDIR"
-
 if [ ! -d "$BASEDIR" ]; then
   echo "Outputdir $BASEDIR does not exist!"
   exit 1
 fi
 
 if ! blkid "${DEVICE}" >/dev/null 2>&1; then
-  echo no device
+  echo "The device ${DEVICE} cannot be found"
   exit 1
 fi
 
@@ -195,6 +193,7 @@ else
   DIR="${BASEDIR}"
 fi
 
+# call the main action
 eval "${ACTION}"
 
 
