@@ -93,16 +93,6 @@ restore() {
     echo "File mbr.dump with master boot record not found" && \
     exit 1
 
-  # check partition dumps
-  #for PARTITION in ${PARTITIONS}
-  #do
-  #  PARTNUMBER=$(echo "$PARTITION" | tr -dc '[:digit:]')
-  #  if ! compgen -G "${DIR}/${PINAME}.${PARTNUMBER}.*.img" >/dev/null 2>&1; then
-  #    echo "partition file for $PARTITION not found"
-  #    exit 1
-  #  fi
-  #done
-
   # Re-create partition
   echo "Creating partitons on ${DEVICE}"
   if ! sfdisk "${DEVICE}" < "${DIR}/sfdisk.dump"; then
