@@ -10,7 +10,6 @@ The script runs on a linux distribution of your choice. You must have the follow
 * sfdisk
 * partclone
 * dd
-* compgen
 * blkid
 
 

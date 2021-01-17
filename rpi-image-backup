@@ -37,6 +37,18 @@ EOT
     exit 3
 }
 
+requirements() {
+  local requirement_missing=0
+  for req in blkid sfdisk partclone.restore dd
+  do
+    if ! which "${req}" >/dev/null 2>&1; then
+      echo "Missing requirement: ${req}"
+      requirement_missing=1
+    fi
+  done
+  [ "${requirement_missing}" -ne 0 ] && exit 1
+}
+
 backup() {
   mkdir -p "${DIR}"
 
@@ -133,6 +145,9 @@ restore() {
 
 
 # --- MAIN ---
+
+# check requirements
+requirements
 
 if ! OPTIONS=$(getopt -n "$0" -o d:n:b:h --long device:,name:,basedir:,help,backup,restore -- "$@"); then
   usage
