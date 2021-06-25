@@ -136,7 +136,7 @@ restore() {
     PARTNUMBER=$(echo "$PARTITION" | tr -dc '[:digit:]')
     FSTYPE=$(basename $(compgen -G "${DIR}/${PINAME}.${PARTNUMBER}.*.img") | cut -d. -f3)
     if [ -z "${FSTYPE}" ]; then
-      echo "Skipping $PARTITION: Cloud not find filesystem type"
+      echo "Skipping $PARTITION: Could not find filesystem type"
       continue
     fi
     if ! partclone.restore -d -s "${DIR}/${PINAME}.${PARTNUMBER}.${FSTYPE}.img" -o "${PARTITION}"; then

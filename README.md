@@ -69,5 +69,13 @@ Restores the MBR, partition information and all partitions to the given device.
 
 REMEMBER: This will WIPE your destination device. There is NO fallback. You have been warned.
 
+### Mount partclone image file
+This is useful when you want to access the filesystem in the image file:
+
+```
+# partclone.restore --restore_raw_file -C -s <image file> -o <output file>
+# mount -o loop <output file> /mnt
+```
+
 
 
